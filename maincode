@@ -1,0 +1,172 @@
+import os
+import time
+import smtplib
+import tkinter as tk
+from tkinter import filedialog
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import threading
+
+# Email settings
+smtp_server = 'smtp.office365.com'
+smtp_port = 587
+smtp_username = 'shafna2222@outlook.com'
+smtp_password = 'shafnas123'
+sender_email = 'shafna2222@outlook.com'
+recipient_email = 'shafnas162@gmail.com'
+
+# Create the GUI window
+window = tk.Tk()
+window.title("Folder Monitor")
+
+output_text = tk.Text(window)
+output_text.pack()
+
+is_monitoring = False  # Flag to indicate if monitoring is active
+folder_path = ""
+
+
+def send_email(subject, message):
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = recipient_email
+    msg['Subject'] = subject
+
+    body = MIMEText(message)
+    msg.attach(body)
+
+    try:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_username, smtp_password)
+            server.send_message(msg)
+            output_text.insert(tk.END, "Email sent successfully\n")
+    except Exception as e:
+        output_text.insert(tk.END, f"Error sending email: {str(e)}\n")
+
+
+def start_monitoring():
+    global is_monitoring
+    global folder_path
+
+    if not is_monitoring:
+        folder_path = folder_path_entry.get()
+        if not os.path.isdir(folder_path):
+            output_text.insert(tk.END, "Invalid directory path\n")
+            return
+
+        is_monitoring = True
+        monitor_thread = threading.Thread(target=monitor_folder, args=(folder_path,))
+        monitor_thread.start()
+        output_text.insert(tk.END, "Monitoring started\n")
+
+
+def stop_monitoring():
+    global is_monitoring
+
+    if is_monitoring:
+        is_monitoring = False
+        output_text.insert(tk.END, "Monitoring stopped\n")
+
+
+def browse_directory():
+    global folder_path
+    folder_path = filedialog.askdirectory()
+    folder_path_entry.delete(0, tk.END)
+    folder_path_entry.insert(tk.END, folder_path)
+    output_text.insert(tk.END, f"Directory selected: {folder_path}\n")
+
+
+def monitor_folder(folder_path):
+    initial_files = get_files(folder_path)
+
+    while is_monitoring:  # Check the flag to continue monitoring
+        time.sleep(10)  # Sleep for some time before checking again
+
+        current_files = get_files(folder_path)
+
+        # Check for added files and folders
+        added_files = get_added_files(initial_files, current_files)
+        for file_path in added_files:
+            message = f"File/Folder Added: {file_path}"
+            output_text.insert(tk.END, message + "\n")
+            send_email("Folder Monitor Notification", message)
+
+        # Check for deleted files and folders
+        deleted_files = get_deleted_files(initial_files, current_files)
+        for file_path in deleted_files:
+            message = f"File/Folder Deleted: {file_path}"
+            output_text.insert(tk.END, message + "\n")
+            send_email("Folder Monitor Notification", message)
+
+        # Check for modified files
+        modified_files = get_modified_files(initial_files, current_files)
+        for file_path in modified_files:
+            message = f"File/Folder Modified: {file_path}"
+            output_text.insert(tk.END, message + "\n")
+            send_email("Folder Monitor Notification", message)
+
+        initial_files = current_files
+
+
+def get_files(folder_path):
+    files = {}
+
+    for root, dirs, filenames in os.walk(folder_path):
+        for filename in filenames:
+            file_path = os.path.join(root, filename)
+            files[file_path] = os.path.getmtime(file_path)
+
+        for dir_name in dirs:
+            dir_path = os.path.join(root, dir_name)
+            files[dir_path] = os.path.getmtime(dir_path)
+
+    return files
+
+
+def get_added_files(initial_files, current_files):
+    added_files = []
+
+    for file_path in current_files:
+        if file_path not in initial_files:
+            added_files.append(file_path)
+
+    return added_files
+
+
+def get_deleted_files(initial_files, current_files):
+    deleted_files = []
+
+    for file_path in initial_files:
+        if file_path not in current_files:
+            deleted_files.append(file_path)
+    return deleted_files
+
+
+def get_modified_files(initial_files, current_files):
+    modified_files = []
+
+    for file_path in initial_files:
+        if file_path in current_files:
+            if os.path.getmtime(file_path) != initial_files[file_path]:
+                modified_files.append(file_path)
+
+    return modified_files
+
+
+# Browse button
+browse_button = tk.Button(window, text="Browse", command=browse_directory)
+browse_button.pack()
+
+# Folder path entry
+folder_path_entry = tk.Entry(window)
+folder_path_entry.pack()
+
+# Start and stop buttons
+start_button = tk.Button(window, text="Start Monitoring", command=start_monitoring)
+start_button.pack()
+stop_button = tk.Button(window, text="Stop Monitoring", command=stop_monitoring)
+stop_button.pack()
+
+# Start the GUI main loop
+window.mainloop()
